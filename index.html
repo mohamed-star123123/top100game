@@ -155,7 +155,8 @@ function check(){
  render();if(net.mode==='host')sync();
 }
 // ---------- online
-function setOnlineUI(on){var a=['team1Btn','team2Btn','switchBtn'];for(var i=0;i<a.length;i++)$(a[i]).style.display=on?'none':'';}
+function setOnlineUI(on){var a=['team1Btn','team2Btn','switchBtn','sugBtn','list'];for(var i=0;i<a.length;i++)$(a[i]).style.display=on?'none':'';$('judgeBtn').parentNode.style.display=on?'none':'';$('sugbox').style.display='none';}
+var PCFG={config:{iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'},{urls:'stun:global.stun.twilio.com:3478'},{urls:['turn:eu-0.turn.peerjs.com:3478','turn:us-0.turn.peerjs.com:3478'],username:'peerjs',credential:'peerjsp'},{urls:['turn:openrelay.metered.ca:80','turn:openrelay.metered.ca:443','turn:openrelay.metered.ca:443?transport=tcp'],username:'openrelayproject',credential:'openrelayproject'}]}};
 function needPeer(){if(typeof Peer==='undefined'){msg(t('needNet'));return true;}return false;}
 function goOnline(){showOnly('online');}
 function goHost(){showOnly('host');}
@@ -172,9 +173,10 @@ function makeRoom(tries){
  var hn=trim($('hn').value),code=genCode();
  if(net.peer){try{net.peer.destroy();}catch(e){}}
  $('mkBtn').style.display='none';
- var pr=new Peer('top100game-'+code);net.peer=pr;net.mode='host';net.myTeam=1;
+ var pr=new Peer('top100game-'+code,PCFG);net.peer=pr;net.mode='host';net.myTeam=1;
  pr.on('open',function(){names=[hn,''];$('code').textContent=code;$('roomBox').style.display='block';});
  pr.on('error',function(er){if(er&&er.type==='unavailable-id'&&tries<5){makeRoom(tries+1);return;}$('mkBtn').style.display='block';msg(t('roomFail'));});
+ pr.on('disconnected',function(){try{if(net.peer===pr&&!pr.destroyed)pr.reconnect();}catch(e){}});
  pr.on('connection',function(c){if(net.conn&&net.conn.open){c.close();return;}net.conn=c;c.on('data',onHostData);c.on('close',onClosed);});
 }
 function onHostData(m){
@@ -189,13 +191,14 @@ function joinRoom(){
  if(code.length<4){$('jst').textContent=t('codeEmpty');return;}
  $('jst').textContent=t('connecting');
  if(net.peer){try{net.peer.destroy();}catch(e){}}
- var pr=new Peer();net.peer=pr;net.mode='guest';net.myTeam=2;net.started=false;
- pr.on('open',function(){var c=pr.connect('top100game-'+code,{reliable:true});net.conn=c;
-  c.on('open',function(){c.send({t:'hello',name:nm});$('jst').textContent=t('connected');});
+ var pr=new Peer(undefined,PCFG);net.peer=pr;net.mode='guest';net.myTeam=2;net.started=false;net.step='server';
+ pr.on('open',function(){net.step='room';var c=pr.connect('top100game-'+code,{reliable:true});net.conn=c;
+  c.on('open',function(){net.step='channel';c.send({t:'hello',name:nm});$('jst').textContent=t('connected');});
   c.on('data',onGuestData);c.on('close',onClosed);});
- pr.on('error',function(er){$('jst').textContent=(er&&er.type==='peer-unavailable')?t('badCode'):t('connFail');});
- setTimeout(function(){if(net.mode==='guest'&&!net.started)$('jst').textContent=t('connFail2');},15000);
+ pr.on('error',function(er){$('jst').textContent=(er&&er.type==='peer-unavailable')?t('badCode'):t('connFail')+' ['+((er&&er.type)||'error')+'/'+net.step+']';});
+ setTimeout(function(){if(net.mode==='guest'&&!net.started){var ic='';try{ic=net.conn&&net.conn.peerConnection?net.conn.peerConnection.iceConnectionState:'';}catch(e){}$('jst').textContent=t('connFail2')+' ['+net.step+(ic?'/'+ic:'')+']';}},22000);
 }
+document.addEventListener('visibilitychange',function(){if(!document.hidden&&net.mode==='host'&&net.peer&&net.peer.disconnected&&!net.peer.destroyed){try{net.peer.reconnect();}catch(e){}}});
 function onGuestData(m){
  if(!m)return;
  if(m.t==='start'){net.started=true;setOnlineUI(true);setState(m);showOnly('rules');}
